@@ -33,13 +33,14 @@ func main() {
 	o.Writef("type MessageID byte")
 	o.Writef("const (")
 	autoMsgID := 0
-	var lastName string
+	var lastMsgName string
 	for _, s := range doc.Structs {
-		o.Writef("MsgID_%s MessageID = %d", s.Name[0:len(s.Name)-3], autoMsgID)
-		if s.Name != lastName && lastName != "" {
+		curMsgName := s.Name[0 : len(s.Name)-3]
+		if curMsgName != lastMsgName {
+			o.Writef("MsgID_%s MessageID = %d", curMsgName, autoMsgID)
 			autoMsgID++
 		}
-		lastName = s.Name
+		lastMsgName = curMsgName
 	}
 	o.Writef(")")
 
