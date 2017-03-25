@@ -28,23 +28,69 @@ func main() {
 
 	o.Writef(`import "encoding/binary"`)
 	o.Writef(`import "github.com/funny/gobuf"`)
+	o.Writef(`import "github.com/2dgamer/fastapi2"`)
 	o.Writef(`import "github.com/2dgamer/fastapi2/fastapi2_toy/services"`)
 
 	o.Writef("type MessageID byte")
 	o.Writef("const (")
 	autoMsgID := 0
 	var lastMsgName string
+	var msgNames []string
 	for _, s := range doc.Structs {
+		if strings.ToLower(s.Name) == doc.Package {
+			continue
+		}
+
 		curMsgName := s.Name[0 : len(s.Name)-3]
 		if curMsgName != lastMsgName {
 			o.Writef("MsgID_%s MessageID = %d", curMsgName, autoMsgID)
 			autoMsgID++
+			msgNames = append(msgNames, curMsgName)
 		}
 		lastMsgName = curMsgName
 	}
 	o.Writef(")")
 
+
+	o.Writef("func(_ *%s) NewRequest(id byte) fastapi2.IMessage {", strings.Title(doc.Package))
+	o.Writef("switch MessageID(id) {")
+	for _, msgName := range msgNames {
+		o.Writef("case MsgID_%s:", msgName)
+		o.Writef("return &%sReq{}", msgName)
+	}
+	o.Writef("}")
+	o.Writef("return nil")
+	o.Writef("}\n")
+
+	o.Writef("func(_ *%s) NewResponse(id byte) fastapi2.IMessage {", strings.Title(doc.Package))
+	o.Writef("switch MessageID(id) {")
+	for _, msgName := range msgNames {
+		o.Writef("case MsgID_%s:", msgName)
+		o.Writef("return &%sRsp{}", msgName)
+	}
+	o.Writef("}")
+	o.Writef("return nil")
+	o.Writef("}\n")
+
+	o.Writef("func (s *%s) HandleRequest(session *link.Session, req fastapi2.IMessage) {", strings.Title(doc.Package))
+	o.Writef("switch MessageID(req.MessageID()) {")
+	for _, msgName := range msgNames {
+		o.Writef("case MsgID_%s:", msgName)
+		o.Writef("session.Send(s.%s(session, req.(*%sReq)))", msgName, msgName)
+	}
+	o.Writef("default:")
+	o.Writef(`panic("Unhandled Message Type")`)
+	o.Writef("}")
+	o.Writef("}\n")
+
 	for _, s := range doc.Structs {
+		if strings.ToLower(s.Name) == doc.Package {
+			o.Writef("func(s *%s) ServiceID() byte {", s.Name)
+			o.Writef("return byte(services.ServiceID_%s)", strings.Title(doc.Package))
+			o.Writef("}\n")
+			continue
+		}
+
 		o.Writef("var _ gobuf.Struct = (*%s)(nil)", s.Name)
 
 		o.Writef("func (s *%s) Size() int {", s.Name)
