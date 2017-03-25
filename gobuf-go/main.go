@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/funny/gobuf/parser"
 
@@ -27,6 +28,20 @@ func main() {
 
 	o.Writef(`import "encoding/binary"`)
 	o.Writef(`import "github.com/funny/gobuf"`)
+	o.Writef(`import "github.com/2dgamer/fastapi2/fastapi2_toy/services"`)
+
+	o.Writef("type MessageID byte")
+	o.Writef("const (")
+	autoMsgID := 0
+	var lastName string
+	for _, s := range doc.Structs {
+		o.Writef("MsgID_%s MessageID = %d", s.Name, autoMsgID)
+		if s.Name != lastName && lastName != "" {
+			autoMsgID++
+		}
+		lastName = s.Name
+	}
+	o.Writef(")")
 
 	for _, s := range doc.Structs {
 		o.Writef("var _ gobuf.Struct = (*%s)(nil)", s.Name)
@@ -53,6 +68,18 @@ func main() {
 			genUnmarshaler(&o, "s."+field.Name, field.Type, 1)
 		}
 		o.Writef("return n")
+		o.Writef("}\n")
+
+		o.Writef("func(s *%s) MessageID() byte {", s.Name)
+		o.Writef("return byte(MsgID_%s)", s.Name[0:len(s.Name)-3])
+		o.Writef("}\n")
+
+		o.Writef("func(s *%s) ServiceID() byte {", s.Name)
+		o.Writef("return byte(services.ServiceID_%s)", strings.Title(doc.Package))
+		o.Writef("}\n")
+
+		o.Writef("func(s *%s) Identity() string {", s.Name)
+		o.Writef("return \"%s.%s\"", strings.Title(doc.Package), strings.Title(s.Name))
 		o.Writef("}\n")
 	}
 
