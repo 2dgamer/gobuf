@@ -6,11 +6,19 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"unicode"
 
 	"github.com/funny/gobuf/parser"
 
 	"strings"
 )
+
+func LcFirst(str string) string {
+	for i, v := range str {
+		return string(unicode.ToLower(v)) + str[i+1:]
+	}
+	return ""
+}
 
 func main() {
 	var doc parser.Doc
@@ -26,8 +34,70 @@ func main() {
 	o.Writef("using System;")
 	o.Writef("using System.Collections.Generic;")
 
+	o.Writef("namespace FastNet {")
+	o.Writef("class %s {", strings.Title(doc.Package))
+	o.Writef("private FastClient client;")
+
+	o.Writef("enum MessageID : byte {")
+	autoMsgID := 0
+	var lastMsgName string
+	var msgNames []string
 	for _, s := range doc.Structs {
-		o.Writef("class %s {", s.Name)
+		if strings.ToLower(s.Name) == doc.Package {
+			continue
+		}
+
+		curMsgName := s.Name[0 : len(s.Name)-3]
+		if curMsgName != lastMsgName {
+			o.Writef("MsgID_%s = %d", curMsgName, autoMsgID)
+			autoMsgID++
+			msgNames = append(msgNames, curMsgName)
+		}
+		lastMsgName = curMsgName
+	}
+	o.Writef("};")
+
+	for _, s := range doc.Structs {
+		if s.Name[len(s.Name)-3:] == "Rsp" {
+			o.Writef("public delegate void %sHandler(%s %s);", s.Name, s.Name, LcFirst(s.Name))
+			o.Writef("public %sHandler %sHandle;", s.Name, LcFirst(s.Name))
+		}
+	}
+
+	o.Writef("public %s(FastClient c) {", strings.Title(doc.Package))
+	o.Writef("this.client = c;")
+	for _, s := range doc.Structs {
+		if s.Name[len(s.Name)-3:] == "Rsp" {
+			o.Writef("this.client.registHandle ((byte)ServiceID.ServiceID_%s, (byte)Module1.MessageID.MsgID_%s, this.handle%s);", strings.Title(doc.Package), s.Name[0:len(s.Name)-3], s.Name)
+		}
+	}
+	o.Writef("}")
+
+	for _, s := range doc.Structs {
+		if s.Name[len(s.Name)-3:] == "Rsp" {
+			o.Writef("public void handle%s(byte[] content) {", s.Name)
+			o.Writef("%s %s = new %s ();", s.Name, LcFirst(s.Name), s.Name)
+			o.Writef("%s.Unmarshal (content, 0);", LcFirst(s.Name))
+			o.Writef("if (%sHandle != null) {", LcFirst(s.Name))
+			o.Writef("%sHandle (%s);", LcFirst(s.Name), LcFirst(s.Name))
+			o.Writef("}")
+			o.Writef("}")
+
+		} else if s.Name[len(s.Name)-3:] == "Req" {
+			o.Writef("public void Send%s(%s %s) {", s.Name, s.Name, LcFirst(s.Name))
+			o.Writef("byte[] b = new byte[%s.Size()];", LcFirst(s.Name))
+			o.Writef("%s.Marshal (b, 0);", LcFirst(s.Name))
+			o.Writef("client.Send((byte)ServiceID.ServiceID_%s, (byte)MessageID.MsgID_%s, b);", strings.Title(doc.Package), s.Name[0:len(s.Name)-3])
+			o.Writef("}")
+		}
+	}
+
+	for _, s := range doc.Structs {
+		if strings.ToLower(s.Name) == doc.Package {
+			continue
+		}
+
+		o.Writef("public class %s {", s.Name)
 
 		for _, field := range s.Fields {
 			if field.Type.Kind == parser.ARRAY {
@@ -73,6 +143,8 @@ func main() {
 
 		o.Writef("}")
 	}
+	o.Writef("}")
+	o.Writef("}")
 
 	if _, err := o.WriteTo(os.Stdout); err != nil {
 		log.Fatal(err)
